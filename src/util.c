@@ -24,6 +24,10 @@
 #include "module.h"
 #include "connection.h"
 
+// Exceptions
+
+static PyObject *ExcThreadingViolation; /* thread misuse */
+
 int pysqlite_step(sqlite3_stmt* statement, pysqlite_Connection* connection)
 {
     int rc;
@@ -69,7 +73,7 @@ int _pysqlite_seterror(sqlite3* db, sqlite3_stmt* st)
             (void)PyErr_NoMemory();
             break;
         case SQLITE_ERROR:
-        case SQLITE_PERM:
+      case SQLITE_PERM:
         case SQLITE_ABORT:
         case SQLITE_BUSY:
         case SQLITE_LOCKED:

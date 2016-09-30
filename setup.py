@@ -234,7 +234,6 @@ class AmalgamationBuildExt(build_ext):
                                         depends=ext.depends)
 
         # XXX -- this is a Vile HACK!
-        #
         # The setup.py script for Python on Unix needs to be able to
         # get this list so it can perform all the clean up needed to
         # avoid keeping object files around when cleaning out a failed
@@ -254,19 +253,6 @@ class AmalgamationBuildExt(build_ext):
         # Detect target language, if not provided
         language = ext.language or self.compiler.detect_language(sources)
 
-        #self.compiler.link_shared_object(
-            #objects, ext_path,
-            #libraries=self.get_libraries(ext),
-            #library_dirs=ext.library_dirs,
-            #runtime_library_dirs=ext.runtime_library_dirs,
-            #extra_postargs=extra_args,
-            #export_symbols=self.get_export_symbols(ext),
-            #debug=self.debug,
-            #build_temp=self.build_temp,
-            #target_lang=language)
-
-        # XXX may I have a static lib please?
-        # hmm but then I cannot load that extension, or can I?
         output_dir = os.path.sep.join(ext_path.split(os.path.sep)[:-1])
 
         self.compiler.create_static_lib(
@@ -320,8 +306,6 @@ def get_setup_args():
         author="Kali Kaneko",
         author_email="kali@leap.se",
         license="zlib/libpng",
-        # XXX check
-        # It says MIT in the google project
         platforms="ALL",
         url="http://github.com/leapcode/pysqlcipher/",
         # Description of the modules and packages in the distribution

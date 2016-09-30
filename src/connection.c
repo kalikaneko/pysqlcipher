@@ -45,33 +45,6 @@
 #endif
 #endif
 
-/* Calls where error could be set.  We assume that a variable 'res' is set.  Also need the db to take
-   the mutex on */
-#define _PYSQLITE_CALL_E(db, x)                     \
-do {                                                \
-  Py_BEGIN_ALLOW_THREADS                            \
-    {                                               \
-      sqlite3_mutex_enter(sqlite3_db_mutex(db));    \
-      x;                                            \
-      if(res!=SQLITE_OK && res!=SQLITE_DONE && res!=SQLITE_ROW) \
-        apsw_set_errmsg(sqlite3_errmsg((db)));      \
-      sqlite3_mutex_leave(sqlite3_db_mutex(db));    \
-    }                                               \
-  Py_END_ALLOW_THREADS;                             \
- } while(0)
-
-#define INUSE_CALL(x)                               \
-  do {                                              \
-       assert(self->inuse==0); self->inuse=1;       \
-       { x; }                                       \
-       assert(self->inuse==1); self->inuse=0;       \
-  } while(0)
-
-/* call from blob code */
-#define PYSQLITE_BLOB_CALL(y) INUSE_CALL(_PYSQLITE_CALL_E(self->connection->db, y))
-
-/* call from connection code */
-#define PYSQLITE_CON_CALL(y)  INUSE_CALL(_PYSQLITE_CALL_E(self->db, y))
 
 static int pysqlite_connection_set_isolation_level(pysqlite_Connection* self, PyObject* isolation_level);
 static void _pysqlite_drop_unused_cursor_references(pysqlite_Connection* self);
@@ -596,15 +569,18 @@ pysqlite_connection_blobopen(pysqlite_Connection *self, PyObject *args)
   //CHECK_CLOSED(self, NULL);
 
   if(!PyArg_ParseTuple(args, "esesesLi:blobopen(database, table, column, rowid, rd_wr)",
-                       STRENCODING, &dbname, STRENCODING, &tablename, STRENCODING, &column, &rowid, &writing))
+                       "utf-8", &dbname, "utf-8", &tablename, "utf-8", &column, &rowid, &writing))
     return NULL;
 
-  PYSQLITE_CON_CALL(res=sqlite3_blob_open(self->db, dbname, tablename, column, rowid, writing, &blob));
+  res=sqlite3_blob_open(self->db, dbname, tablename, column, rowid, writing, &blob);
 
   PyMem_Free((void*)dbname);
   PyMem_Free((void*)tablename);
   PyMem_Free((void*)column);
-  SET_EXC(res, self->db);
+
+  // FIXME
+  // SET_EXC(res, self->db);
+  //
   if(res!=SQLITE_OK)
     return NULL;
 
@@ -612,14 +588,17 @@ pysqlite_connection_blobopen(pysqlite_Connection *self, PyObject *args)
   //APSW_FAULT_INJECT(BlobAllocFails,apswblob=PyObject_New(struct APSWBlob, &APSWBlobType), (PyErr_NoMemory(), apswblob=NULL));
   if(!pysqlite_blob)
     {
-      PYSQLITE_CON_CALL(sqlite3_blob_close(blob));
+      sqlite3_blob_close(blob);
       return NULL;
     }
 
   pysqlite_Blob_init(pysqlite_blob, self, blob);
-  weakref=PyWeakref_NewRef((PyObject*)pysqlite_blob, self->dependent_remove);
-  PyList_Append(self->dependents, weakref);
-  Py_DECREF(weakref);
+
+  // TODO what are dependents?  ------------------------------------------------
+  //weakref=PyWeakref_NewRef((PyObject*)pysqlite_blob) , self->dependent_remove);
+  //PyList_Append(self->dependents, weakref);
+  //Py_DECREF(weakref);
+  // ---------------------------------------------------------------------------
   return (PyObject*)pysqlite_blob;
 }
 

@@ -4,6 +4,71 @@
   See the accompanying LICENSE file.
 */
 
+#include "util.h"
+
+
+static PyObject *tls_errmsg;
+
+static void
+set_errmsg(const char *msg)
+{
+  PyObject *key=NULL, *value=NULL;
+  PyObject *etype, *eval, *etb;
+
+  PyGILState_STATE gilstate=PyGILState_Ensure();
+  /* dictionary operations whine if there is an outstanding error */
+  PyErr_Fetch(&etype, &eval, &etb);
+
+  /*
+  if(!tls_errmsg)
+    {
+      tls_errmsg=PyDict_New();
+      if(!tls_errmsg) goto finally;
+    }
+  */
+  key=PyLong_FromLong(PyThread_get_thread_ident());
+  if(!key) goto finally;
+  value=PyBytes_FromStringAndSize(msg, strlen(msg));
+  if(!value) goto finally;
+
+  PyDict_SetItem(tls_errmsg, key, value);
+
+ finally:
+  Py_XDECREF(key);
+  Py_XDECREF(value);
+  PyErr_Restore(etype, eval, etb);
+  PyGILState_Release(gilstate);
+}
+
+
+/* Calls where error could be set.  We assume that a variable 'res' is set.  Also need the db to take
+   the mutex on */
+#define _PYSQLITE_CALL_E(db, x)                     \
+do {                                                \
+  Py_BEGIN_ALLOW_THREADS                            \
+    {                                               \
+      sqlite3_mutex_enter(sqlite3_db_mutex(db));    \
+      x;                                            \
+      if(res!=SQLITE_OK && res!=SQLITE_DONE && res!=SQLITE_ROW) \
+        set_errmsg(sqlite3_errmsg((db)));      \
+      sqlite3_mutex_leave(sqlite3_db_mutex(db));    \
+    }                                               \
+  Py_END_ALLOW_THREADS;                             \
+ } while(0)
+
+
+/* call from blob code */
+#define PYSQLITE_BLOB_CALL(y) _PYSQLITE_CALL_E(self->connection->db, y)
+
+#define CHECK_USE(e)                                                \
+  do \
+  { if(self->inuse)                                                                                 \
+      {    /* raise exception if we aren't already in one */                                                                         \
+           if (!PyErr_Occurred())                                                                                                    \
+             PyErr_Format(ExcThreadingViolation, "You are trying to use the same object concurrently in two threads or re-entrantly within the same thread which is not allowed."); \
+           return e;                                                                                                                 \
+      }                                                                                                                              \
+  } while(0)
 
 /**
 .. _blobio:
@@ -161,7 +226,7 @@ static PyTypeObject ZeroBlobBindType = {
 /* BLOB TYPE */
 struct pysqlite_Blob {
   PyObject_HEAD
-  Connection *connection;
+  pysqlite_Connection *connection;
   sqlite3_blob *pBlob;
   unsigned inuse;                 /* track if we are in use preventing concurrent thread mangling */
   int curoffset;                  /* SQLite only supports 32 bit signed int offsets */
@@ -192,7 +257,7 @@ static PyTypeObject pysqlite_BlobType;
 */
 
 static void
-pysqlite_Blob_init(pysqlite_Blob *self, Connection *connection, sqlite3_blob *blob)
+pysqlite_Blob_init(pysqlite_Blob *self, pysqlite_Connection *connection, sqlite3_blob *blob)
 {
   Py_INCREF(connection);
   self->connection=connection;
@@ -223,14 +288,17 @@ pysqlite_Blob_close_internal(pysqlite_Blob *self, int force)
           switch(force)
             {
             case 0:
-              SET_EXC(res, self->connection->db);
+              // FIXME
+              // SET_EXC(res, self->connection->db);
               setexc=1;
               break;
             case 1:
               break;
             case 2:
-              SET_EXC(res, self->connection->db);
-              apsw_write_unraiseable(NULL);
+              // FIXME
+              // SET_EXC(res, self->connection->db);
+              // apsw_write_unraiseable(NULL);
+              break;
             }
         }
       self->pBlob=0;
@@ -239,8 +307,10 @@ pysqlite_Blob_close_internal(pysqlite_Blob *self, int force)
  /* Remove from connection dependents list.  Has to be done before we
      decref self->connection otherwise connection could dealloc and
      we'd still be in list */
-  if(self->connection)
-    Connection_remove_dependent(self->connection, (PyObject*)self);
+
+  // TODO
+  //if(self->connection)
+  //  Connection_remove_dependent(self->connection, (PyObject*)self);
 
   Py_CLEAR(self->connection);
 
@@ -340,7 +410,8 @@ pysqlite_Blob_read(pysqlite_Blob *self, PyObject *args)
   if(res!=SQLITE_OK)
     {
       Py_DECREF(buffy);
-      SET_EXC(res, self->connection->db);
+      // FIXME
+      // SET_EXC(res, self->connection->db);
       return NULL;
     }
   else
@@ -437,7 +508,8 @@ pysqlite_Blob_readinto(pysqlite_Blob *self, PyObject *args)
 
   if(res!=SQLITE_OK)
     {
-      SET_EXC(res, self->connection->db);
+      // FIXME
+      // SET_EXC(res, self->connection->db);
       return NULL;
     }
   self->curoffset+=lengthwanted;
@@ -554,7 +626,8 @@ pysqlite_Blob_write(pysqlite_Blob *self, PyObject *obj)
 
   if(res!=SQLITE_OK)
     {
-      SET_EXC(res, self->connection->db);
+      // FIXME 
+      // SET_EXC(res, self->connection->db);
       return NULL;
     }
   else
@@ -691,7 +764,8 @@ pysqlite_Blob_reopen(pysqlite_Blob *self, PyObject *arg)
 
   if(res!=SQLITE_OK)
     {
-      SET_EXC(res, self->connection->db);
+      // FIXME
+      // SET_EXC(res, self->connection->db);
       return NULL;
     }
   Py_RETURN_NONE;
@@ -710,7 +784,7 @@ static PyMethodDef pysqlite_Blob_methods[]={
    "Returns current blob offset"},
   {"write", (PyCFunction)pysqlite_Blob_write, METH_O,
    "Writes data to blob"},
-  {"reopen", (PyCFunction)pyslqite_Blob_reopen, METH_O,
+  {"reopen", (PyCFunction)pysqlite_Blob_reopen, METH_O,
    "Changes the blob to point to a different row"},
   {"close", (PyCFunction)pysqlite_Blob_close, METH_VARARGS,
    "Closes blob"},

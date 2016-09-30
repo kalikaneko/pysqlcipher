@@ -341,7 +341,7 @@ PyMODINIT_FUNC init_sqlite(void)
     Py_INCREF(&pysqlite_RowType);
     PyModule_AddObject(module, "Row", (PyObject*) &pysqlite_RowType);
     Py_INCREF(&pysqlite_BlobType);
-    PyModule_AddObject(module, "Blow", (PyObject*) &pysqlite_BlobType);
+    PyModule_AddObject(module, "Blob", (PyObject*) &pysqlite_BlobType);
 
     if (!(dict = PyModule_GetDict(module))) {
         goto error;

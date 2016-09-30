@@ -45,6 +45,34 @@
 #endif
 #endif
 
+/* Calls where error could be set.  We assume that a variable 'res' is set.  Also need the db to take
+   the mutex on */
+#define _PYSQLITE_CALL_E(db, x)                     \
+do {                                                \
+  Py_BEGIN_ALLOW_THREADS                            \
+    {                                               \
+      sqlite3_mutex_enter(sqlite3_db_mutex(db));    \
+      x;                                            \
+      if(res!=SQLITE_OK && res!=SQLITE_DONE && res!=SQLITE_ROW) \
+        apsw_set_errmsg(sqlite3_errmsg((db)));      \
+      sqlite3_mutex_leave(sqlite3_db_mutex(db));    \
+    }                                               \
+  Py_END_ALLOW_THREADS;                             \
+ } while(0)
+
+#define INUSE_CALL(x)                               \
+  do {                                              \
+       assert(self->inuse==0); self->inuse=1;       \
+       { x; }                                       \
+       assert(self->inuse==1); self->inuse=0;       \
+  } while(0)
+
+/* call from blob code */
+#define PYSQLITE_BLOB_CALL(y) INUSE_CALL(_PYSQLITE_CALL_E(self->connection->db, y))
+
+/* call from connection code */
+#define PYSQLITE_CON_CALL(y)  INUSE_CALL(_PYSQLITE_CALL_E(self->db, y))
+
 static int pysqlite_connection_set_isolation_level(pysqlite_Connection* self, PyObject* isolation_level);
 static void _pysqlite_drop_unused_cursor_references(pysqlite_Connection* self);
 
@@ -530,6 +558,71 @@ error:
         return Py_None;
     }
 }
+
+/** .. method:: blobopen(database, table, column, rowid, writeable)  -> blob
+
+   Opens a blob for :ref:`incremental I/O <blobio>`.
+
+   :param database: Name of the database.  This will be ``main`` for
+     the main connection and the name you specified for `attached
+     <https://sqlite.org/lang_attach.html>`_ databases.
+   :param table: The name of the table
+   :param column: The name of the column
+   :param rowid: The id that uniquely identifies the row.
+   :param writeable: If True then you can read and write the blob.  If False then you can only read it.
+
+   :rtype: :class:`blob`
+
+   .. seealso::
+
+     * :ref:`Blob I/O example <example-blobio>`
+     * `SQLite row ids <https://sqlite.org/autoinc.html>`_
+
+   -* sqlite3_blob_open
+*/
+static PyObject *
+pysqlite_connection_blobopen(pysqlite_Connection *self, PyObject *args)
+{
+  struct pysqlite_Blob *pysqlite_blob=0;
+  sqlite3_blob *blob=0;
+  const char *dbname, *tablename, *column;
+  long long rowid;
+  int writing;
+  int res;
+  PyObject *weakref;
+
+  // TODO
+  //CHECK_USE(NULL);
+  //CHECK_CLOSED(self, NULL);
+
+  if(!PyArg_ParseTuple(args, "esesesLi:blobopen(database, table, column, rowid, rd_wr)",
+                       STRENCODING, &dbname, STRENCODING, &tablename, STRENCODING, &column, &rowid, &writing))
+    return NULL;
+
+  PYSQLITE_CON_CALL(res=sqlite3_blob_open(self->db, dbname, tablename, column, rowid, writing, &blob));
+
+  PyMem_Free((void*)dbname);
+  PyMem_Free((void*)tablename);
+  PyMem_Free((void*)column);
+  SET_EXC(res, self->db);
+  if(res!=SQLITE_OK)
+    return NULL;
+
+  // FIXME fault_inject macro
+  //APSW_FAULT_INJECT(BlobAllocFails,apswblob=PyObject_New(struct APSWBlob, &APSWBlobType), (PyErr_NoMemory(), apswblob=NULL));
+  if(!pysqlite_blob)
+    {
+      PYSQLITE_CON_CALL(sqlite3_blob_close(blob));
+      return NULL;
+    }
+
+  pysqlite_Blob_init(pysqlite_blob, self, blob);
+  weakref=PyWeakref_NewRef((PyObject*)pysqlite_blob, self->dependent_remove);
+  PyList_Append(self->dependents, weakref);
+  Py_DECREF(weakref);
+  return (PyObject*)pysqlite_blob;
+}
+
 
 PyObject* pysqlite_connection_rollback(pysqlite_Connection* self, PyObject* args)
 {
@@ -1603,6 +1696,8 @@ static PyMethodDef connection_methods[] = {
         PyDoc_STR("Closes the connection.")},
     {"commit", (PyCFunction)pysqlite_connection_commit, METH_NOARGS,
         PyDoc_STR("Commit the current transaction.")},
+    {"blobopen", (PyCFunction)pysqlite_connection_blobopen, METH_VARARGS,
+        PyDoc_STR("Opens a blob for i/o.")},
     {"rollback", (PyCFunction)pysqlite_connection_rollback, METH_NOARGS,
         PyDoc_STR("Roll back the current transaction.")},
     {"create_function", (PyCFunction)pysqlite_connection_create_function, METH_VARARGS|METH_KEYWORDS,

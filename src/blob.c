@@ -44,16 +44,6 @@ set_errmsg(const char *msg)
 
 
 
-#define CHECK_USE(e)                                                \
-  do \
-  { if(self->inuse)                                                                                 \
-      {    /* raise exception if we aren't already in one */                                                                         \
-           if (!PyErr_Occurred())                                                                                                    \
-             PyErr_Format(ExcThreadingViolation, "You are trying to use the same object concurrently in two threads or re-entrantly within the same thread which is not allowed."); \
-           return e;                                                                                                                 \
-      }                                                                                                                              \
-  } while(0)
-
 /**
 .. _blobio:
 
@@ -202,7 +192,8 @@ static PyTypeObject ZeroBlobBindType = {
     0,                         /* tp_cache */
     0,                         /* tp_subclasses */
     0,                         /* tp_weaklist */
-    0                          /* tp_del */
+    0,                         /* tp_del */
+    0                          /* version_tag */
 };
 
 
@@ -320,8 +311,8 @@ pysqlite_Blob_dealloc(pysqlite_Blob *self)
 static PyObject *
 pysqlite_Blob_length(pysqlite_Blob *self)
 {
-  CHECK_USE(NULL);
-  CHECK_BLOB_CLOSED;
+  //CHECK_USE(NULL);
+  //CHECK_BLOB_CLOSED;
   return PyLong_FromLong(sqlite3_blob_bytes(self->pBlob));
 }
 
@@ -345,8 +336,8 @@ pysqlite_Blob_read(pysqlite_Blob *self, PyObject *args)
   PyObject *buffy=0;
   char *thebuffer;
 
-  CHECK_USE(NULL);
-  CHECK_BLOB_CLOSED;
+  //CHECK_USE(NULL);
+  //CHECK_BLOB_CLOSED;
 
   /* The python file read routine treats negative numbers as read till
      end of file, which I think is rather silly.  (Try reading -3
@@ -428,8 +419,8 @@ pysqlite_Blob_readinto(pysqlite_Blob *self, PyObject *args)
 
   int bloblen;
 
-  CHECK_USE(NULL);
-  CHECK_BLOB_CLOSED;
+  //CHECK_USE(NULL);
+  //CHECK_BLOB_CLOSED;
 
   /* To get Py_ssize_t we need "n" format but that only exists in
      Python 2.5 plus */
@@ -504,8 +495,8 @@ static PyObject *
 pysqlite_Blob_seek(pysqlite_Blob *self, PyObject *args)
 {
   int offset, whence=0;
-  CHECK_USE(NULL);
-  CHECK_BLOB_CLOSED;
+  //CHECK_USE(NULL);
+  //CHECK_BLOB_CLOSED;
 
   if(!PyArg_ParseTuple(args, "i|i:seek(offset,whence=0)", &offset, &whence))
     return NULL;
@@ -543,8 +534,8 @@ pysqlite_Blob_seek(pysqlite_Blob *self, PyObject *args)
 static PyObject *
 pysqlite_Blob_tell(pysqlite_Blob *self)
 {
-  CHECK_USE(NULL);
-  CHECK_BLOB_CLOSED;
+  //CHECK_USE(NULL);
+  //CHECK_BLOB_CLOSED;
   return PyLong_FromLong(self->curoffset);
 }
 
@@ -569,8 +560,8 @@ pysqlite_Blob_write(pysqlite_Blob *self, PyObject *obj)
   const void *buffer=0;
   Py_ssize_t size;
   int res;
-  CHECK_USE(NULL);
-  CHECK_BLOB_CLOSED;
+  //CHECK_USE(NULL);
+  //CHECK_BLOB_CLOSED;
 
   /* we support buffers and string for the object */
   if(!PyUnicode_Check(obj) && PyObject_CheckReadBuffer(obj))
@@ -636,7 +627,7 @@ pysqlite_Blob_close(pysqlite_Blob *self, PyObject *args)
   int setexc;
   int force=0;
 
-  CHECK_USE(NULL);
+  //CHECK_USE(NULL);
 
   if(args && !PyArg_ParseTuple(args, "|i:close(force=False)", &force))
     return NULL;
@@ -668,7 +659,7 @@ pysqlite_Blob_close(pysqlite_Blob *self, PyObject *args)
 static PyObject *
 pysqlite_Blob_enter(pysqlite_Blob *self)
 {
-  CHECK_USE(NULL);
+  //CHECK_USE(NULL);
   CHECK_BLOB_CLOSED;
 
   Py_INCREF(self);
@@ -686,7 +677,7 @@ static PyObject *
 pysqlite_Blob_exit(pysqlite_Blob *self, PyObject *args)
 {
   PyObject *res;
-  CHECK_USE(NULL);
+  //CHECK_USE(NULL);
   CHECK_BLOB_CLOSED;
 
   res=pysqlite_Blob_close(self, NULL);
@@ -710,8 +701,8 @@ pysqlite_Blob_reopen(pysqlite_Blob *self, PyObject *arg)
   int res;
   long long rowid;
 
-  CHECK_USE(NULL);
-  CHECK_BLOB_CLOSED;
+  //CHECK_USE(NULL);
+  //CHECK_BLOB_CLOSED;
 
 #if PY_MAJOR_VERSION<3
   if(PyInt_Check(arg))
@@ -813,11 +804,13 @@ static PyTypeObject pysqlite_BlobType = {
     0,                         /* tp_cache */
     0,                         /* tp_subclasses */
     0,                         /* tp_weaklist */
-    0                          /* tp_del */
+    0,                         /* tp_del */
+    0                          /* version_tag */
 };
 
 extern int pysqlite_zeroblob_setup_types(void)
 {
+    ZeroBlobBindType.tp_new = PyType_GenericNew;
     return PyType_Ready(&ZeroBlobBindType);
 }
 

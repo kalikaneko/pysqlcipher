@@ -319,8 +319,10 @@ PyMODINIT_FUNC init_sqlite(void)
         (pysqlite_connection_setup_types() < 0) ||
         (pysqlite_cache_setup_types() < 0) ||
         (pysqlite_statement_setup_types() < 0) ||
-        (pysqlite_zeroblob_setup_types()) < 0 ||
-        (pysqlite_blob_setup_types()) < 0 ||
+
+        (pysqlite_zeroblob_setup_types() < 0) ||
+        (pysqlite_blob_setup_types() < 0) ||
+
         #ifdef PYSQLITE_EXPERIMENTAL
         (pysqlite_backup_setup_types() < 0) ||
         #endif
@@ -341,10 +343,11 @@ PyMODINIT_FUNC init_sqlite(void)
     PyModule_AddObject(module, "PrepareProtocol", (PyObject*) &pysqlite_PrepareProtocolType);
     Py_INCREF(&pysqlite_RowType);
     PyModule_AddObject(module, "Row", (PyObject*) &pysqlite_RowType);
+
+    /* ----- FIXME --------------
+    ---------------------------*/
     Py_INCREF(&ZeroBlobBindType);
     PyModule_AddObject(module, "zeroblob", (PyObject*) &ZeroBlobBindType);
-    Py_INCREF(&pysqlite_BlobType);
-    PyModule_AddObject(module, "Blob", (PyObject*) &pysqlite_BlobType);
 
     if (!(dict = PyModule_GetDict(module))) {
         goto error;

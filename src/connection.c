@@ -29,6 +29,7 @@
 #include "prepare_protocol.h"
 #include "util.h"
 #include "sqlitecompat.h"
+#include "blob.h"
 
 #ifdef PYSQLITE_EXPERIMENTAL
 #include "backup.h"
@@ -48,6 +49,7 @@
 
 static int pysqlite_connection_set_isolation_level(pysqlite_Connection* self, PyObject* isolation_level);
 static void _pysqlite_drop_unused_cursor_references(pysqlite_Connection* self);
+
 
 
 static void _sqlite3_result_error(sqlite3_context* ctx, const char* errmsg, int len)
@@ -586,6 +588,8 @@ pysqlite_connection_blobopen(pysqlite_Connection *self, PyObject *args)
 
   // FIXME fault_inject macro
   //APSW_FAULT_INJECT(BlobAllocFails,apswblob=PyObject_New(struct APSWBlob, &APSWBlobType), (PyErr_NoMemory(), apswblob=NULL));
+  pysqlite_blob=PyObject_New(struct pysqlite_Blob, &pysqlite_BlobType);
+
   if(!pysqlite_blob)
     {
       sqlite3_blob_close(blob);
@@ -1770,6 +1774,7 @@ PyTypeObject pysqlite_ConnectionType = {
         0,                                              /* tp_new */
         0                                               /* tp_free */
 };
+
 
 extern int pysqlite_connection_setup_types(void)
 {

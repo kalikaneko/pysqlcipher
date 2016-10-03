@@ -50,7 +50,7 @@ DEV_VERSION = None
 
 PATCH_VERSION = None
 
-sources = ["src/module.c", "src/connection.c", "src/cursor.c", "src/cache.c",
+sources = ["src/module.c", "src/blob.c", "src/connection.c", "src/cursor.c", "src/cache.c",
            "src/microprotocols.c", "src/prepare_protocol.c", "src/statement.c",
            "src/util.c", "src/row.c"]
 
@@ -130,142 +130,61 @@ class LibSQLCipherBuilder(build_ext):
 
 
 class AmalgamationBuildExt(build_ext):
-    amalgamation = True  # We want amalgamation on the default build for now
-    static = False
 
     def build_extension(self, ext):
-        if self.amalgamation:
-            # build with fulltext search enabled
-            ext.define_macros.append(
-                ("SQLITE_ENABLE_FTS3", "1"))
-            ext.define_macros.append(
-                ("SQLITE_ENABLE_FTS5", "1"))
-            ext.define_macros.append(
-                ("SQLITE_ENABLE_RTREE", "1"))
+        ext.extra_compile_args.append("-fPIC")
 
-            # SQLCipher options
-            ext.define_macros.append(
-                ("SQLITE_ENABLE_LOAD_EXTENSION", "1"))
-            ext.define_macros.append(
-                ("SQLITE_HAS_CODEC", "1"))
-            ext.define_macros.append(
-                ("SQLITE_TEMP_STORE", "2"))
-            ext.define_macros.append(
-                ("HAVE_USLEEP", "1"))
+        # build with fulltext search enabled
+        ext.define_macros.append(
+            ("SQLITE_ENABLE_FTS3", "1"))
+        ext.define_macros.append(
+            ("SQLITE_ENABLE_FTS5", "1"))
+        ext.define_macros.append(
+            ("SQLITE_ENABLE_RTREE", "1"))
 
-            ext.sources.append(os.path.join(AMALGAMATION_ROOT, "sqlite3.c"))
-            ext.include_dirs.append(AMALGAMATION_ROOT)
+        # SQLCipher options
+        ext.define_macros.append(
+            ("SQLITE_ENABLE_LOAD_EXTENSION", "1"))
+        ext.define_macros.append(
+            ("SQLITE_HAS_CODEC", "1"))
+        ext.define_macros.append(
+            ("SQLITE_TEMP_STORE", "2"))
+        ext.define_macros.append(
+            ("HAVE_USLEEP", "1"))
 
-            if sys.platform == "win32":
-                # Try to locate openssl
-                openssl_conf = os.environ.get('OPENSSL_CONF')
-                if not openssl_conf:
-                    sys.exit('Fatal error: OpenSSL could not be detected!')
-                openssl = os.path.dirname(os.path.dirname(openssl_conf))
+        ext.sources.append(os.path.join(AMALGAMATION_ROOT, "sqlite3.c"))
+        ext.include_dirs.append(AMALGAMATION_ROOT)
 
-                # Configure the compiler
-                ext.include_dirs.append(os.path.join(openssl, "include"))
-                ext.define_macros.append(("inline", "__inline"))
+        if sys.platform == "win32":
+            # Try to locate openssl
+            openssl_conf = os.environ.get('OPENSSL_CONF')
+            if not openssl_conf:
+                sys.exit('Fatal error: OpenSSL could not be detected!')
+            openssl = os.path.dirname(os.path.dirname(openssl_conf))
 
-                # Configure the linker
-                if self.compiler.compiler_type == "msvc":
-                    ext.extra_link_args.append("libeay32.lib")
-                    ext.extra_link_args.append(
-                        "/LIBPATH:" + os.path.join(openssl, "lib")
-                    )
-                if self.compiler.compiler_type == "mingw32":
-                    ext.extra_link_args.append("-lcrypto")     
-            else:
-                ext.extra_link_args.append("-lcrypto")
+            # Configure the compiler
+            ext.include_dirs.append(os.path.join(openssl, "include"))
+            ext.define_macros.append(("inline", "__inline"))
 
-        if self.static:
-            self._build_extension(ext)
+            # Configure the linker
+            if self.compiler.compiler_type == "msvc":
+                ext.extra_link_args.append("libeay32.lib")
+                ext.extra_link_args.append(
+                    "/LIBPATH:" + os.path.join(openssl, "lib")
+                )
+            if self.compiler.compiler_type == "mingw32":
+                ext.extra_link_args.append("-lcrypto")     
         else:
-            build_ext.build_extension(self, ext)
+            ext.extra_link_args.append("-lcrypto")
+            ext.extra_link_args.append("-fPIC")
 
-    def _build_extension(self, ext):
-        sources = ext.sources
-        if sources is None or type(sources) not in (ListType, TupleType):
-            raise DistutilsSetupError, \
-                ("in 'ext_modules' option (extension '%s'), " +
-                 "'sources' must be present and must be " +
-                 "a list of source filenames") % ext.name
-        sources = list(sources)
+        build_ext.build_extension(self, ext)
 
-        ext_path = self.get_ext_fullpath(ext.name)
-        depends = sources + ext.depends
-        if not (self.force or newer_group(depends, ext_path, 'newer')):
-            log.debug("skipping '%s' extension (up-to-date)", ext.name)
-            return
-        else:
-            log.info("building '%s' extension", ext.name)
-
-        # First, scan the sources for SWIG definition files (.i), run
-        # SWIG on 'em to create .c files, and modify the sources list
-        # accordingly.
-        sources = self.swig_sources(sources, ext)
-
-        # Next, compile the source code to object files.
-
-        # XXX not honouring 'define_macros' or 'undef_macros' -- the
-        # CCompiler API needs to change to accommodate this, and I
-        # want to do one thing at a time!
-
-        # Two possible sources for extra compiler arguments:
-        #   - 'extra_compile_args' in Extension object
-        #   - CFLAGS environment variable (not particularly
-        #     elegant, but people seem to expect it and I
-        #     guess it's useful)
-        # The environment variable should take precedence, and
-        # any sensible compiler will give precedence to later
-        # command line args.  Hence we combine them in order:
-        extra_args = ext.extra_compile_args or []
-
-        macros = ext.define_macros[:]
-        for undef in ext.undef_macros:
-            macros.append((undef,))
-
-        objects = self.compiler.compile(sources,
-                                        output_dir=self.build_temp,
-                                        macros=macros,
-                                        include_dirs=ext.include_dirs,
-                                        debug=self.debug,
-                                        extra_postargs=extra_args,
-                                        depends=ext.depends)
-
-        # XXX -- this is a Vile HACK!
-        # The setup.py script for Python on Unix needs to be able to
-        # get this list so it can perform all the clean up needed to
-        # avoid keeping object files around when cleaning out a failed
-        # build of an extension module.  Since Distutils does not
-        # track dependencies, we have to get rid of intermediates to
-        # ensure all the intermediates will be properly re-built.
-        #
-        self._built_objects = objects[:]
-
-        # Now link the object files together into a "shared object" --
-        # of course, first we have to figure out all the other things
-        # that go into the mix.
-        if ext.extra_objects:
-            objects.extend(ext.extra_objects)
-        extra_args = ext.extra_link_args or []
-
-        # Detect target language, if not provided
-        language = ext.language or self.compiler.detect_language(sources)
-
-        output_dir = os.path.sep.join(ext_path.split(os.path.sep)[:-1])
-
-        self.compiler.create_static_lib(
-            objects,
-            #XXX get library name ... splitting ext_path?
-            "sqlite",
-            output_dir=output_dir,
-            target_lang=language)
 
     def __setattr__(self, k, v):
         # Make sure we don't link against the SQLite
         # library, no matter what setup.cfg says
-        if self.amalgamation and k == "libraries":
+        if k == "libraries":
             v = None
         self.__dict__[k] = v
 
